@@ -2,11 +2,33 @@
 
 Turn a YouTube playlist into a Notion database, Obsidian vault, or Anki deck.
 
+## Quick start
+
+```bash
+pip install playlistpipe
+plp
 ```
-plp "https://youtube.com/playlist?list=..." --to notion-api
-plp "https://youtube.com/playlist?list=..." --to obsidian --vault ~/vault
-plp "https://youtube.com/playlist?list=..." --to anki
+
+That's it. Run `plp` with no arguments and it walks you through the rest:
+
 ```
+? Paste a YouTube playlist URL:  https://youtube.com/playlist?list=...
+? Where should this go?
+  ❯ Notion (recommended — full database with progress tracking)
+    Notion (copy-paste markdown, no setup)
+    Obsidian vault
+    Anki deck
+    Cancel
+```
+
+Pick a target and it prompts for whatever it needs (Notion token, vault path,
+etc.), offers to remember your answers, runs the scrape, and opens the result
+for you. The first run for a given target takes ~30 seconds of one-time setup;
+every run after that is one command and one paste.
+
+If you prefer flags over menus — for scripting, cron, CI — see
+[For scripting](#for-scripting) at the bottom. The flag form has always worked
+and still does.
 
 ## Why this exists
 
@@ -144,6 +166,24 @@ blow up.
 Re-running updates existing cards in place, so editing a playlist on
 YouTube and re-exporting won't duplicate your deck.
 
+## For scripting
+
+All the prompts in interactive mode map to CLI flags. If you're wiring this
+into a cron job, a CI pipeline, or a shell alias, skip the menu:
+
+```bash
+plp "https://youtube.com/playlist?list=..." --to notion-api --notion-parent PAGE_ID
+plp "https://youtube.com/playlist?list=..." --to notion-md --copy
+plp "https://youtube.com/playlist?list=..." --to obsidian --vault ~/MyVault
+plp "https://youtube.com/playlist?list=..." --to anki --thumbnails
+```
+
+Passing a URL positionally makes `--to` required, and the interactive flow is
+skipped entirely. Tokens still only come from env or config — never argv —
+because argv ends up in shell history.
+
+Full flag reference is `plp --help`.
+
 ## Compared to alternatives
 
 Being honest because I'd want someone to be honest with me:
@@ -217,7 +257,8 @@ Architecture:
 ```
 src/playlistpipe/
 ├── cli.py                   # argparse, dispatch to exporters
-├── config.py                # XDG config, env precedence
+├── interactive.py           # questionary-driven menu flow (plp with no args)
+├── config.py                # XDG config, env precedence, save()
 ├── logging_setup.py         # token redaction filter
 ├── core/
 │   ├── models.py            # Video, Playlist, Exporter protocol
