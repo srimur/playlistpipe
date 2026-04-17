@@ -68,13 +68,17 @@ def scrape_playlist(url: str) -> Playlist:
         )
 
     entries = info.get("entries") or []
+    # Flat extraction omits per-video channel on most entries — fall back to
+    # the playlist's own uploader so rows don't end up with "Unknown" everywhere.
+    playlist_channel = (info.get("uploader") or info.get("channel") or "").strip()
+
     videos: list[Video] = []
     for position, entry in enumerate(entries, start=1):
         if not entry:
             # ignoreerrors=True leaves None in the list for dead videos
             log.debug("skipping entry at position %d (unavailable)", position)
             continue
-        video = _entry_to_video(entry, position)
+        video = _entry_to_video(entry, position, playlist_channel)
         if video is not None:
             videos.append(video)
 
@@ -89,8 +93,14 @@ def scrape_playlist(url: str) -> Playlist:
     )
 
 
-def _entry_to_video(entry: dict[str, Any], position: int) -> Video | None:
-    """Translate one yt-dlp entry into our Video. Returns None if unusable."""
+def _entry_to_video(
+    entry: dict[str, Any], position: int, playlist_channel: str = "",
+) -> Video | None:
+    """Translate one yt-dlp entry into our Video. Returns None if unusable.
+
+    ``playlist_channel`` is used as a fallback when the entry itself has no
+    channel field — which is the common case under ``extract_flat``.
+    """
     vid = entry.get("id")
     if not vid:
         log.debug("entry at position %d has no id, skipping", position)
@@ -118,7 +128,11 @@ def _entry_to_video(entry: dict[str, Any], position: int) -> Video | None:
         video_id=validated_id,
         title=(entry.get("title") or "").strip() or "(untitled)",
         url=url,
-        channel=(entry.get("channel") or entry.get("uploader") or "").strip() or "Unknown",
+        channel=(
+            (entry.get("channel") or entry.get("uploader") or "").strip()
+            or playlist_channel
+            or "Unknown"
+        ),
         duration_seconds=duration,
         position=position,
         thumbnail_url=_pick_thumbnail(entry),

@@ -97,10 +97,14 @@ def _run() -> int:
     # and mirrors cli.main's own laziness.
     from .core.scraper import scrape_playlist
 
-    print(f"\nscraping {url} ...")
-    playlist = scrape_playlist(url)
-    print(f"found {len(playlist)} videos in {playlist.title!r}. exporting ...")
-    result = exporter.export(playlist)
+    try:
+        print(f"\nscraping {url} ...")
+        playlist = scrape_playlist(url)
+        print(f"found {len(playlist)} videos in {playlist.title!r}. exporting ...")
+        result = exporter.export(playlist)
+    except Exception as e:  # noqa: BLE001  surface friendly errors, no tracebacks
+        return _report_error(e)
+
     _print_result(result)
     _offer_open(result)
     return 0
@@ -334,3 +338,119 @@ def _offer_open(result: ExportResult) -> None:
 def _cancel() -> int:
     print("cancelled", file=sys.stderr)
     return 130
+
+
+def _report_error(e: BaseException) -> int:
+    """Turn an exception raised during scrape/export into a friendly message.
+
+    The goal is that a user who ran ``plp`` from a GUI terminal never sees a
+    traceback — they see one line stating what broke and one line stating how
+    to fix it. Set ``PLAYLISTPIPE_DEBUG=1`` to re-raise and get the full trace
+    when filing a bug report.
+    """
+    if os.environ.get("PLAYLISTPIPE_DEBUG"):
+        raise e
+
+    # Lazy imports: these types live in modules we may not have loaded yet.
+    from .core.scraper import ScraperError
+    from .exporters.notion_api import NotionError
+
+    msg = str(e) or type(e).__name__
+    low = msg.lower()
+
+    if isinstance(e, NotionError):
+        print(f"\nerror: Notion rejected the request.\n  {msg}", file=sys.stderr)
+        if "404" in msg and "page" in low:
+            print(
+                "\n  likely cause: your integration isn't connected to that page.\n"
+                "  fix it in Notion:\n"
+                "    1. open the parent page in Notion\n"
+                "    2. click the '...' menu in the top-right\n"
+                "    3. Connections → add your playlistpipe integration\n"
+                "  then re-run `plp`.",
+                file=sys.stderr,
+            )
+        elif "401" in msg or "unauthorized" in low:
+            print(
+                "\n  your Notion token is invalid or has been revoked.\n"
+                "  generate a new one at https://www.notion.so/my-integrations\n"
+                "  and delete the old `token` line from your config file:\n"
+                f"    {CONFIG_PATH}",
+                file=sys.stderr,
+            )
+        elif "429" in msg or "rate" in low:
+            print(
+                "\n  rate-limited by Notion. wait a minute and re-run `plp`.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "\n  this is usually a schema or payload issue. if it keeps\n"
+                "  happening, open an issue with the message above.",
+                file=sys.stderr,
+            )
+        return 1
+
+    if isinstance(e, ScraperError):
+        print(f"\nerror: couldn't scrape the playlist.\n  {msg}", file=sys.stderr)
+        if "private" in low:
+            print(
+                "\n  private playlists aren't supported. change the playlist\n"
+                "  to unlisted or public in YouTube's playlist settings.",
+                file=sys.stderr,
+            )
+        elif "no videos" in low or "not a playlist" in low:
+            print(
+                "\n  the URL doesn't look like a real playlist — double-check\n"
+                "  it loads for you in a browser (signed out).",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "\n  if this looks network-y, check your connection and retry.\n"
+                "  YouTube occasionally rate-limits scrapers from residential IPs.",
+                file=sys.stderr,
+            )
+        return 1
+
+    if isinstance(e, PermissionError):
+        print(f"\nerror: permission denied.\n  {msg}", file=sys.stderr)
+        print(
+            "\n  your OS refused a filesystem write. check the target directory\n"
+            "  is writable and not open in another program.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if isinstance(e, FileNotFoundError):
+        print(f"\nerror: file or directory not found.\n  {msg}", file=sys.stderr)
+        print(
+            "\n  the path used above doesn't exist. check your config at:\n"
+            f"    {CONFIG_PATH}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if isinstance(e, OSError):
+        print(f"\nerror: filesystem problem.\n  {msg}", file=sys.stderr)
+        print("\n  check disk space and that the output directory is writable.", file=sys.stderr)
+        return 1
+
+    if isinstance(e, ValueError):
+        # Bad config shape, path traversal attempt, etc.
+        print(f"\nerror: invalid input.\n  {msg}", file=sys.stderr)
+        return 1
+
+    if isinstance(e, RuntimeError):
+        print(f"\nerror: {msg}", file=sys.stderr)
+        return 1
+
+    # Fallback — unknown exception. Name the class so a bug report is useful,
+    # but still no traceback in the default output.
+    print(
+        f"\nerror: unexpected {type(e).__name__}: {msg}\n"
+        "  re-run with PLAYLISTPIPE_DEBUG=1 for the full traceback, or\n"
+        "  open an issue at https://github.com/srimur/playlistpipe/issues",
+        file=sys.stderr,
+    )
+    return 1

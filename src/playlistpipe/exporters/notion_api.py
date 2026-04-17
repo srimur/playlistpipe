@@ -87,7 +87,11 @@ class NotionApiExporter:
 
         created = 0
         updated = 0
-        for v in playlist.videos:
+        # Notion's default database view sorts by creation time, newest
+        # first — so creating rows in forward order puts position 1 at the
+        # bottom. Insert in reverse so the default view reads 1 → N.
+        # (Existing rows get updated by id regardless of order.)
+        for v in reversed(playlist.videos):
             page_id = existing.get(v.video_id)
             if page_id:
                 self._update_row(page_id, v)
