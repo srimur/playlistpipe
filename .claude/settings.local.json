@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(rm -rf dist/)",
-      "Bash(python -m build)",
-      "Bash(python -m twine check dist/*)"
-    ]
-  }
-}

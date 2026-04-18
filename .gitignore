@@ -30,6 +30,7 @@ coverage.xml
 # Editor / OS noise
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 .DS_Store
